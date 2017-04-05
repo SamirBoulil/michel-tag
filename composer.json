@@ -1,0 +1,28 @@
+{
+    "name": "akeneo/michel-tag",
+    "description": "Command app to release a new Akeneo PIM version",
+    "authors": [
+        {
+            "name": "Julien Sanchez",
+            "email": "julien@akeneo.com"
+        }
+    ],
+    "require": {
+        "symfony/console": "^3.2",
+        "knplabs/github-api": "^2.2",
+        "php-http/guzzle6-adapter": "*",
+        "symfony/yaml": "^3.2",
+        "symfony/filesystem": "^3.2",
+        "symfony/process": "^3.2"
+    },
+    "require-dev": {
+        "phpspec/phpspec": "^3.0",
+        "henrikbjorn/phpspec-code-coverage": "^3.0"
+    },
+    "config": {
+        "bin-dir": "bin"
+    },
+    "autoload": {
+        "psr-0": { "": "src/" }
+    }
+}
