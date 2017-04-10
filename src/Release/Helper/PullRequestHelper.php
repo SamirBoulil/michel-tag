@@ -99,7 +99,7 @@ class PullRequestHelper
                 "\n" .
                 '%s' .
                 "\n" .
-                'Do you want to open it in your default browser to check that everything is allright?',
+                'Do you want to open it in your default browser to check that everything is alright?',
                 $pullRequest['head']['repo']['full_name'],
                 $pullRequest['html_url']
             ), true)
