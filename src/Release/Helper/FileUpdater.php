@@ -147,9 +147,10 @@ class FileUpdater
             );
             $this->fs->dumpFile(sprintf('%s/%s', $editionFolder, self::COMPOSER), $composerFile);
             ProcessRunner::runCommand(sprintf(
-                'cd %s && git add %s && git commit -m "Retablishing use of pim-community-dev %s.x-dev@dev" && ' .
+                'cd %s && git checkout %s && git add %s && git commit -m "Retablishing use of pim-community-dev %s.x-dev@dev" && ' .
                 'git push origin %s',
                 $editionFolder,
+                $branch,
                 self::COMPOSER,
                 $branch,
                 $branch
