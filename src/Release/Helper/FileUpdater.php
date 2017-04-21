@@ -10,10 +10,6 @@ use Symfony\Component\Filesystem\Filesystem;
 
 class FileUpdater
 {
-    const CHANGELOG_PATTERN = 'CHANGELOG-%s.md';
-    const REPOSITORY_PATTERN = '%s-%s-%s';
-    const PIM_PARAMS = 'app/config/pim_parameters.yml';
-    const PIM_VERSION = 'src/Pim%s/Bundle/CatalogBundle/Version.php';
     const COMPOSER = 'composer.json';
 
     /**
@@ -29,99 +25,6 @@ class FileUpdater
     }
 
     /**
-     * Update repository files to prepare the release
-     *
-     * @param string $owner
-     * @param string $repository
-     * @param string $branch
-     * @param string $editionFolder
-     * @param string $tagName
-     *
-     * @return void
-     */
-    public function updateFiles($owner, $repository, $branch, $editionFolder, $tagName)
-    {
-        $repositoryInformations = InformationExtractor::extractRepositoryInformation($repository);
-        $devRepository = sprintf(
-            self::REPOSITORY_PATTERN,
-            $repositoryInformations[InformationExtractor::PRODUCT],
-            $repositoryInformations[InformationExtractor::EDITION],
-            'dev'
-        );
-        if ('standard' === $repositoryInformations[InformationExtractor::VERSION]) {
-            //We copy the changelog file into the standard
-            $changelogFile = $this->downloadRepoFile(
-                $owner,
-                $devRepository,
-                $branch,
-                sprintf(self::CHANGELOG_PATTERN, $branch),
-                $editionFolder
-            );
-            $this->fs->dumpFile(
-                sprintf('%s/%s', $editionFolder, sprintf(self::CHANGELOG_PATTERN, $branch)),
-                $changelogFile
-            );
-            ProcessRunner::runCommand(
-                sprintf('cd %s && git add %s', $editionFolder, sprintf(self::CHANGELOG_PATTERN, $branch))
-            );
-
-            //We copy the pim_parameters file into the standard
-            $pimParamsFile = $this->downloadRepoFile($owner, $devRepository, $branch, self::PIM_PARAMS, $editionFolder);
-            $this->fs->dumpFile(sprintf('%s/%s', $editionFolder, self::PIM_PARAMS), $pimParamsFile);
-            ProcessRunner::runCommand(sprintf('cd %s && git add %s', $editionFolder, self::PIM_PARAMS));
-        }
-
-        if ('dev' === $repositoryInformations[InformationExtractor::VERSION]) {
-            $versionFileLocation = sprintf(
-                self::PIM_VERSION,
-                ('community' === $repositoryInformations[InformationExtractor::EDITION] ? '' : 'Enterprise')
-            );
-            //We update the version file with the new patch name
-            $versionFile = file_get_contents(
-                $editionFolder .
-                '/' .
-                $versionFileLocation
-            );
-            $versionFile = preg_replace('/\'\d+.\d+.\d+.*\';/', sprintf('\'%s\';', $tagName), $versionFile);
-
-            $this->fs->dumpFile(sprintf('%s/%s', $editionFolder, $versionFileLocation), $versionFile);
-            ProcessRunner::runCommand(sprintf('cd %s && git add %s', $editionFolder, $versionFileLocation));
-
-            //We update the changelog title with the patch name and the date
-            $changelogFile = file_get_contents($editionFolder . '/' . sprintf(self::CHANGELOG_PATTERN, $branch));
-            $changelogFile = preg_replace(
-                '/# \d+.\d+.(x|\*)/',
-                sprintf('# %s (%s)', $tagName, date('Y-m-d')),
-                $changelogFile
-            );
-
-            $this->fs->dumpFile(
-                sprintf('%s/%s', $editionFolder, sprintf(self::CHANGELOG_PATTERN, $branch)),
-                $changelogFile
-            );
-            ProcessRunner::runCommand(
-                sprintf('cd %s && git add %s', $editionFolder, sprintf(self::CHANGELOG_PATTERN, $branch))
-            );
-        }
-
-        //We update the community requirement to match the tag in the composer.json file
-        $composerFile = file_get_contents(sprintf('%s/%s', $editionFolder, self::COMPOSER));
-        $composerFile = preg_replace(
-            '/"akeneo\/pim-community-dev": "\d+.\d+.x-dev@dev"/',
-            sprintf('"akeneo/pim-community-dev": "~%s"', $tagName),
-            $composerFile
-        );
-        //We update the enterprise requirement to match the tag in the composer.json file
-        $composerFile = preg_replace(
-            '/"akeneo\/pim-enterprise-dev": "\d+.\d+.x-dev@dev"/',
-            sprintf('"akeneo/pim-enterprise-dev": "~%s"', $tagName),
-            $composerFile
-        );
-        $this->fs->dumpFile(sprintf('%s/%s', $editionFolder, self::COMPOSER), $composerFile);
-        ProcessRunner::runCommand(sprintf('cd %s && git add %s', $editionFolder, self::COMPOSER));
-    }
-
-    /**
      * Clean composer requirements
      *
      * @param string $repository
@@ -130,9 +33,9 @@ class FileUpdater
      */
     public function cleanRequirements($repository, $editionFolder, $branch)
     {
-        $repositoryInformations = InformationExtractor::extractRepositoryInformation($repository);
-        if ('dev' !== $repositoryInformations[InformationExtractor::VERSION] ||
-            'community' !== $repositoryInformations[InformationExtractor::EDITION]
+        $repositoryInformation = InformationExtractor::extractRepositoryInformation($repository);
+        if ('dev' !== $repositoryInformation[InformationExtractor::DISTRIBUTION] ||
+            'community' !== $repositoryInformation[InformationExtractor::EDITION]
         ) {
             $composerFile = file_get_contents(sprintf('%s/%s', $editionFolder, self::COMPOSER));
             $composerFile = preg_replace(
@@ -163,45 +66,63 @@ class FileUpdater
     }
 
     /**
-     * Download a file from a repository
+     * Download a file from the specified repo then add it to Git index.
      *
-     * @param [string] $owner
-     * @param [string] $repository
-     * @param [string] $branch
-     * @param [string] $path
-     * @param [string] $destinationFolder
-     *
-     * @return string
+     * @param string $owner
+     * @param string $repository
+     * @param string $branch
+     * @param string $filepath
+     * @param string $destinationFolder
      */
-    protected function downloadRepoFile($owner, $repository, $branch, $path, $destinationFolder)
+    public function copyFileFromRepo($owner, $repository, $branch, $filepath, $destinationFolder)
     {
         try {
             $file = $this->client->api('repo')->contents()->download(
                 $owner,
                 $repository,
-                $path,
+                $filepath,
                 $branch
             );
-        } catch (RuntimeException $e) {
+        } catch (\Exception $e) {
             $this->io->error(sprintf(
-                'Error during the copy the %s file from %s/%s:%s with error: %s',
-                $path,
+                'Error during the copy of the file "%s" from %s/%s:%s with error "%s"',
+                $filepath,
                 $owner,
                 $repository,
                 $branch,
                 $e->getMessage()
             ));
 
-            throw new \RuntimeException(sprintf('Unable to fetch %s file', $path));
+            throw new \RuntimeException(sprintf('Unable to fetch %s file', $filepath));
         }
         $this->io->success(sprintf(
-            'We copy the %s file from %s/%s:%s',
-            $path,
+            'We copy the file "%s" from %s/%s:%s',
+            $filepath,
             $owner,
             $repository,
             $branch
         ));
 
-        return $file;
+        $this->fs->dumpFile($destinationFolder . '/' . $filepath, $file);
+        ProcessRunner::runCommand(
+            sprintf('cd %s && git add %s', $destinationFolder, $filepath)
+        );
+    }
+
+    /**
+     * Replace occurrences of a pattern in the specified file then add it to Git index.
+     *
+     * @param string $currentFolder
+     * @param string $filepath
+     * @param string $pattern
+     * @param string $replacement
+     */
+    public function replaceInFile($currentFolder, $filepath, $pattern, $replacement)
+    {
+        $file = file_get_contents($currentFolder . '/' . $filepath);
+        $file = preg_replace($pattern, $replacement, $file);
+
+        $this->fs->dumpFile($currentFolder . '/' . $filepath, $file);
+        ProcessRunner::runCommand(sprintf('cd %s && git add %s', $currentFolder, $filepath));
     }
 }

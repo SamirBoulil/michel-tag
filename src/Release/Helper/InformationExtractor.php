@@ -6,7 +6,7 @@ class InformationExtractor
 {
     const PRODUCT = 'product';
     const EDITION = 'edition';
-    const VERSION = 'version';
+    const DISTRIBUTION = 'distribution';
 
     /**
      * Extract repositoryInformations
@@ -17,12 +17,12 @@ class InformationExtractor
      */
     public static function extractRepositoryInformation($repository)
     {
-        preg_match('/^(?P<product>.*)-(?P<edition>.*)-(?P<version>.*)$/', $repository, $matches);
+        preg_match('/^(?P<product>.*)-(?P<edition>.*)-(?P<distribution>.*)$/', $repository, $matches);
 
         return [
             self::PRODUCT => $matches['product'],
             self::EDITION => $matches['edition'],
-            self::VERSION => $matches['version']
+            self::DISTRIBUTION => $matches['distribution'],
         ];
     }
 }
